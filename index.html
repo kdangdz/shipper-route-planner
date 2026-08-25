@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Shipper Route Planner - Visualizer</title>
+    <!-- Thư viện CSS Bản đồ Leaflet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        height: 100vh;
+      }
+      #sidebar {
+        width: 300px;
+        padding: 20px;
+        background: #f4f4f4;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+      }
+      #map {
+        flex: 1;
+        height: 100%;
+        z-index: 1;
+      }
+      .btn {
+        width: 100%;
+        padding: 10px;
+        margin-top: 10px;
+        background: #28a745;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .btn-danger {
+        background: #dc3545;
+      }
+      h2 {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar">
+      <h2>🚚 Shipper Planner</h2>
+      <p><i>Click lên bản đồ để chọn điểm giao hàng</i></p>
+
+      <label><b>Chọn Giải thuật:</b></label>
+      <select
+        id="algoSelect"
+        style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 15px"
+      >
+        <option value="brute_force">Vét cạn (Chính xác 100%)</option>
+        <option value="greedy">Tham ăn (Siêu nhanh)</option>
+      </select>
+
+      <button class="btn" id="runBtn">🚀 Chạy Tìm Lộ Trình</button>
+      <button class="btn btn-danger" id="clearBtn">🗑️ Xóa Tất Cả Điểm</button>
+
+      <hr />
+      <h3>📊 Thống kê số liệu:</h3>
+      <p>Số điểm giao: <b id="pointCount">0</b></p>
+      <p>Thời gian chạy: <b id="runTime">0 ms</b></p>
+      <p>Tổng quãng đường: <b id="totalDist">0 km</b></p>
+    </div>
+
+    <!-- Màn hình bản đồ -->
+    <div id="map"></div>
+
+    <!-- Thư viện JS Bản đồ Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // 1. Khởi tạo bản đồ tại TP.HCM
+      const map = L.map("map").setView([10.7769, 106.7009], 13);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap",
+      }).addTo(map);
+
+      let points = [];
+      let markers = [];
+      let routeLayer = null;
+
+      // 2. Sự kiện click chọn điểm trên bản đồ
+      map.on("click", function (e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        points.push({ lat, lng });
+
+        const marker = L.marker([lat, lng])
+          .addTo(map)
+          .bindPopup(`Điểm giao số ${points.length}`)
+          .openPopup();
+        markers.push(marker);
+
+        document.getElementById("pointCount").innerText = points.length;
+      });
+
+      // 3. Hàm tính khoảng cách giữa 2 tọa độ (theo km)
+      function getDistance(p1, p2) {
+        const R = 6371;
+        const dLat = ((p2.lat - p1.lat) * Math.PI) / 180;
+        const dLng = ((p2.lng - p1.lng) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((p1.lat * Math.PI) / 180) *
+            Math.cos((p2.lat * Math.PI) / 180) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      }
+
+      // 4. KHUNG HÀM THUẬT TOÁN (TV2 & TV3 sẽ code phần ruột này)
+      function solveBruteForce(points) {
+        // Mặc định nối lần lượt các điểm [0, 1, 2... 0] để test UI
+        let res = points.map((_, i) => i);
+        res.push(0);
+        return res;
+      }
+
+      function solveGreedy(points) {
+        let res = points.map((_, i) => i);
+        res.push(0);
+        return res;
+      }
+
+      // 5. Hàm vẽ đường nối các điểm dựa trên kết quả thuật toán
+      function drawRoute(pathOrder) {
+        if (routeLayer) map.removeLayer(routeLayer);
+
+        let routeCoords = [];
+        let totalKm = 0;
+
+        for (let i = 0; i < pathOrder.length; i++) {
+          let p = points[pathOrder[i]];
+          routeCoords.push([p.lat, p.lng]);
+
+          if (i > 0) {
+            let prevP = points[pathOrder[i - 1]];
+            totalKm += getDistance(prevP, p);
+          }
+        }
+
+        routeLayer = L.polyline(routeCoords, { color: "red", weight: 4 }).addTo(
+          map
+        );
+        document.getElementById("totalDist").innerText =
+          totalKm.toFixed(2) + " km";
+      }
+
+      // 6. Xử lý nút bấm [Chạy Tìm Lộ Trình]
+      document.getElementById("runBtn").addEventListener("click", () => {
+        if (points.length < 2) {
+          alert("Vui lòng click chọn ít nhất 2 điểm trên bản đồ!");
+          return;
+        }
+
+        const algo = document.getElementById("algoSelect").value;
+        const startTime = performance.now();
+
+        let pathOrder = [];
+        if (algo === "brute_force") {
+          pathOrder = solveBruteForce(points);
+        } else if (algo === "greedy") {
+          pathOrder = solveGreedy(points);
+        }
+
+        const endTime = performance.now();
+        document.getElementById("runTime").innerText =
+          (endTime - startTime).toFixed(2) + " ms";
+        drawRoute(pathOrder);
+      });
+
+      // 7. Xử lý nút Xóa
+      document.getElementById("clearBtn").addEventListener("click", () => {
+        markers.forEach((m) => map.removeLayer(m));
+        if (routeLayer) map.removeLayer(routeLayer);
+        points = [];
+        markers = [];
+        routeLayer = null;
+        document.getElementById("pointCount").innerText = 0;
+        document.getElementById("runTime").innerText = "0 ms";
+        document.getElementById("totalDist").innerText = "0 km";
+      });
+    </script>
+  </body>
+</html>
