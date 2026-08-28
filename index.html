@@ -60,6 +60,48 @@
         <option value="greedy">Tham ăn (Siêu nhanh)</option>
       </select>
 
+<!-- ===== PHẦN D: MÔ PHỎNG VẬT CẢN ===== -->
+<hr />
+
+<h3>🚧 Mô phỏng vật cản</h3>
+
+<label><b>Điểm bắt đầu:</b></label>
+<input
+  type="number"
+  id="obstacleFrom"
+  min="1"
+  placeholder="Ví dụ: 1"
+  style="width: 100%; padding: 8px; margin-top: 5px"
+/>
+
+<label><b>Điểm kết thúc:</b></label>
+<input
+  type="number"
+  id="obstacleTo"
+  min="1"
+  placeholder="Ví dụ: 3"
+  style="width: 100%; padding: 8px; margin-top: 5px"
+/>
+
+<label><b>Loại vật cản:</b></label>
+<select
+  id="obstacleType"
+  style="width: 100%; padding: 8px; margin-top: 5px"
+>
+  <option value="blocked">🚫 Đường cấm</option>
+  <option value="traffic">🚧 Đường kẹt</option>
+</select>
+
+<button class="btn" id="addObstacleBtn">
+  Thêm Vật Cản
+</button>
+
+<button class="btn btn-danger" id="clearObstacleBtn">
+  Xóa Vật Cản
+</button>
+
+<p>Vật cản hiện tại: <b id="obstacleCount">0</b></p>
+
       <button class="btn" id="runBtn">🚀 Chạy Tìm Lộ Trình</button>
       <button class="btn btn-danger" id="clearBtn">🗑️ Xóa Tất Cả Điểm</button>
 
@@ -95,6 +137,27 @@
       let markers = [];
       let routeLayer = null;
 
+      // ===== PHẦN D: MÔ PHỎNG VẬT CẢN =====
+const blockedEdges = new Set();
+const trafficEdges = new Map();
+let obstacleLayers = [];
+
+function edgeKey(a, b) {
+    return a < b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+function blockEdge(a, b) {
+    blockedEdges.add(edgeKey(a, b));
+}
+
+function isBlocked(a, b) {
+    return blockedEdges.has(edgeKey(a, b));
+}
+
+function setTraffic(a, b, multiplier = 2) {
+    trafficEdges.set(edgeKey(a, b), multiplier);
+}
+
       // 2. Sự kiện click chọn điểm trên bản đồ
       map.on("click", function (e) {
         const lat = e.latlng.lat;
@@ -124,6 +187,92 @@
         return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
       }
 
+// ===== PHẦN D: CHI PHÍ DI CHUYỂN CÓ VẬT CẢN =====
+function getTravelCost(points, a, b) {
+    const key = edgeKey(a, b);
+
+    // Đường cấm: không được đi
+    if (blockedEdges.has(key)) {
+        return Infinity;
+    }
+
+    // Khoảng cách thực tế
+    let distance = getDistance(points[a], points[b]);
+
+    // Nếu đường kẹt thì tăng chi phí
+    const multiplier = trafficEdges.get(key) || 1;
+
+    return distance * multiplier;
+}
+
+// ===== PHẦN D: XỬ LÝ NÚT THÊM VẬT CẢN =====
+document.getElementById("addObstacleBtn").addEventListener("click", () => {
+    // Người dùng nhập điểm từ 1, nhưng mảng JavaScript bắt đầu từ 0
+    const a =
+        parseInt(document.getElementById("obstacleFrom").value) - 1;
+
+    const b =
+        parseInt(document.getElementById("obstacleTo").value) - 1;
+
+    const type =
+        document.getElementById("obstacleType").value;
+
+    // Kiểm tra điểm hợp lệ
+    if (
+        isNaN(a) ||
+        isNaN(b) ||
+        a < 0 ||
+        b < 0 ||
+        a >= points.length ||
+        b >= points.length
+    ) {
+        alert("Điểm không hợp lệ!");
+        return;
+    }
+
+    // Không cho chọn cùng một điểm
+    if (a === b) {
+        alert("Hai điểm phải khác nhau!");
+        return;
+    }
+
+    const key = edgeKey(a, b);
+    let color;
+
+    if (type === "blocked") {
+        // Nếu trước đó là đường kẹt thì xóa trạng thái kẹt
+        trafficEdges.delete(key);
+
+        blockEdge(a, b);
+        color = "red";
+    } else {
+        // Nếu trước đó là đường cấm thì bỏ trạng thái cấm
+        blockedEdges.delete(key);
+
+        setTraffic(a, b, 2);
+        color = "orange";
+    }
+
+    // Vẽ đường vật cản lên bản đồ
+    const obstacleLine = L.polyline(
+        [
+            [points[a].lat, points[a].lng],
+            [points[b].lat, points[b].lng]
+        ],
+        {
+            color: color,
+            weight: 5,
+            dashArray: "10, 10"
+        }
+    ).addTo(map);
+
+    obstacleLayers.push(obstacleLine);
+
+    // Cập nhật số lượng vật cản
+    document.getElementById("obstacleCount").innerText =
+        blockedEdges.size + trafficEdges.size;
+});
+
       // 4. KHUNG HÀM THUẬT TOÁN (TV2 & TV3 sẽ code phần ruột này)
       function solveBruteForce(points) {
         const n = points.length;
@@ -134,7 +283,7 @@
         const dist = Array.from({ length: n }, () => new Float64Array(n));
         for (let i = 0; i < n; i++) {
           for (let j = 0; j < n; j++) {
-            dist[i][j] = i === j ? 0 : getDistance(points[i], points[j]);
+            dist[i][j] = i === j ? 0 : getTravelCost(points, i, j);
           }
         }
 
@@ -218,21 +367,61 @@
         }
 
         const algo = document.getElementById("algoSelect").value;
-        const startTime = performance.now();
 
-        let pathOrder = [];
-        if (algo === "brute_force") {
-          pathOrder = solveBruteForce(points);
-        } else if (algo === "greedy") {
-          pathOrder = solveGreedy(points);
-        }
+      // ===== PHẦN D: BENCHMARK THỜI GIAN =====
 
-        const endTime = performance.now();
-        document.getElementById("runTime").innerText =
-          (endTime - startTime).toFixed(2) + " ms";
-        drawRoute(pathOrder);
-      });
+// Brute Force với N quá lớn có thể làm treo trình duyệt
+if (algo === "brute_force" && points.length > 10) {
+    document.getElementById("runTime").innerText =
+        "Không khả thi với N > 10";
 
+    alert(
+        "Brute Force có độ phức tạp rất lớn. " +
+        "Với N > 10, chương trình không chạy để tránh treo trình duyệt."
+    );
+
+    return;
+}
+
+let pathOrder = [];
+let totalTime = 0;
+
+// Greedy chạy 5 lần để lấy trung bình.
+// Brute Force:
+// N <= 8: chạy 5 lần
+// N = 9 hoặc 10: chỉ chạy 1 lần vì rất nặng.
+let runs;
+
+if (algo === "greedy") {
+    runs = 1000;
+} else if (points.length <= 8) {
+    runs = 5;
+} else {
+    runs = 1;
+}
+
+for (let i = 0; i < runs; i++) {
+    const startTime = performance.now();
+
+    if (algo === "brute_force") {
+        pathOrder = solveBruteForce(points);
+    } else if (algo === "greedy") {
+        pathOrder = solveGreedy(points);
+    }
+
+    const endTime = performance.now();
+
+    totalTime += endTime - startTime;
+}
+
+const averageTime = totalTime / runs;
+
+document.getElementById("runTime").innerText =
+    averageTime.toFixed(4) + " ms (TB " + runs + " lần)";
+
+drawRoute(pathOrder);
+
+ });
       // 7. Xử lý nút Xóa
       document.getElementById("clearBtn").addEventListener("click", () => {
         markers.forEach((m) => map.removeLayer(m));
@@ -240,10 +429,25 @@
         points = [];
         markers = [];
         routeLayer = null;
-        document.getElementById("pointCount").innerText = 0;
-        document.getElementById("runTime").innerText = "0 ms";
-        document.getElementById("totalDist").innerText = "0 km";
-      });
+
+        // ===== PHẦN D: XÓA VẬT CẢN =====
+    blockedEdges.clear();
+    trafficEdges.clear();
+
+    obstacleLayers.forEach((layer) => {
+        map.removeLayer(layer);
+    });
+
+    obstacleLayers = [];
+
+    document.getElementById("obstacleCount").innerText = "0";
+    document.getElementById("obstacleFrom").value = "";
+    document.getElementById("obstacleTo").value = "";
+
+    document.getElementById("pointCount").innerText = 0;
+    document.getElementById("runTime").innerText = "0 ms";
+    document.getElementById("totalDist").innerText = "0 km";
+});
     </script>
   </body>
 </html>
