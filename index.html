@@ -272,6 +272,30 @@ document.getElementById("addObstacleBtn").addEventListener("click", () => {
     document.getElementById("obstacleCount").innerText =
         blockedEdges.size + trafficEdges.size;
 });
+// ===== PHẦN D: XỬ LÝ NÚT XÓA VẬT CẢN =====
+document.getElementById("clearObstacleBtn").addEventListener("click", () => {
+
+    // Xóa danh sách đường cấm
+    blockedEdges.clear();
+
+    // Xóa danh sách đường kẹt
+    trafficEdges.clear();
+
+    // Xóa các đường vật cản đang hiển thị trên bản đồ
+    obstacleLayers.forEach((layer) => {
+        map.removeLayer(layer);
+    });
+
+    obstacleLayers = [];
+
+    // Cập nhật số lượng vật cản
+    document.getElementById("obstacleCount").innerText = "0";
+
+    // Xóa nội dung ô nhập
+    document.getElementById("obstacleFrom").value = "";
+    document.getElementById("obstacleTo").value = "";
+
+});
 
       // 4. KHUNG HÀM THUẬT TOÁN (TV2 & TV3 sẽ code phần ruột này)
       function solveBruteForce(points) {
