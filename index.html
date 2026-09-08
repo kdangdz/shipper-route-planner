@@ -329,12 +329,71 @@ document.getElementById("addObstacleBtn").addEventListener("click", () => {
         return bestPath;
       }
 
-      function solveGreedy(points) {
-        let res = points.map((_, i) => i);
-        res.push(0);
-        return res;
-      }
+      function solveGreedyQ(points) {
+          const startIndex = 0;
+          if (!Array.isArray(points) || points.length === 0) {
+              return [];
+          }
 
+          const visited = new Array(points.length).fill(false);
+          const route = [];
+
+          let currentIndex = startIndex;
+
+          visited[currentIndex] = true;
+          route.push(currentIndex);
+
+          while (route.length < points.length) {
+              let nearestIndex = -1;
+              let minDistance = Infinity;
+              var cochan = false;
+              for (let i = 0; i < points.length; i++) {
+                  if (visited[i]) {
+                      continue;
+                  }
+
+                  if (currentIndex>i) {
+                      cochan = blockedEdges.has(`${i}-${currentIndex}`) || trafficEdges.has(`${i}-${currentIndex}`);
+
+                  }else {
+                      cochan = blockedEdges.has(`${currentIndex}-${i}`) || trafficEdges.has(`${currentIndex}-${i}`);
+
+                  }
+                  if (!cochan) {
+                      // Không cần Math.sqrt vì chỉ cần so sánh khoảng cách
+                      const distanceSquared = getDistance(points[currentIndex], points[i]);
+
+                      if (distanceSquared < minDistance) {
+                          minDistance = distanceSquared;
+                          nearestIndex = i;
+                      }
+                  }
+              }
+              if (nearestIndex===-1){
+                  if (!(blockedEdges.has(`${0}-${currentIndex}`) || trafficEdges.has(`${0}-${currentIndex}`))) {
+                      route.push(0);
+                      currentIndex = 0;
+                  }
+              }
+
+
+              if (currentIndex!==nearestIndex&&nearestIndex>=0) {
+                  visited[nearestIndex] = true;
+                  route.push(nearestIndex);
+
+                  currentIndex = nearestIndex;
+              }
+
+
+
+
+          }
+          if (!(blockedEdges.has(`${0}-${currentIndex}`) || trafficEdges.has(`${0}-${currentIndex}`))) {
+              route.push(0);
+              currentIndex = 0;
+          }
+          return route;
+      };
       // 5. Hàm vẽ đường nối các điểm dựa trên kết quả thuật toán
       function drawRoute(pathOrder) {
         if (routeLayer) map.removeLayer(routeLayer);
@@ -406,7 +465,7 @@ for (let i = 0; i < runs; i++) {
     if (algo === "brute_force") {
         pathOrder = solveBruteForce(points);
     } else if (algo === "greedy") {
-        pathOrder = solveGreedy(points);
+        pathOrder = solveGreedyQ(points);
     }
 
     const endTime = performance.now();
@@ -449,6 +508,5 @@ drawRoute(pathOrder);
     document.getElementById("totalDist").innerText = "0 km";
 });
     </script>
-  <script src="thuat_toan_xap_xi.js"></script>
   </body>
 </html>
