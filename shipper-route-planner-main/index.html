@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Shipper Route Planner - Visualizer</title>
+    <!-- Thư viện CSS Bản đồ Leaflet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        height: 100vh;
+      }
+
+      #sidebar {
+        width: 320px;
+        padding: 20px;
+        background: #f4f4f4;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+        overflow-y: auto;
+      }
+
+      #map {
+        flex: 1;
+        height: 100%;
+        z-index: 1;
+      }
+
+      .btn {
+        width: 100%;
+        padding: 10px;
+        margin-top: 10px;
+        background: #28a745;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+        border-radius: 4px;
+      }
+
+      .btn-danger {
+        background: #dc3545;
+      }
+
+      .btn:hover {
+        opacity: 0.9;
+      }
+
+      h2,
+      h3 {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="sidebar">
+      <h2>🚚 Shipper Planner</h2>
+      <p><i>Click lên bản đồ để chọn điểm giao hàng</i></p>
+
+      <label><b>Chọn Giải thuật:</b></label>
+      <select
+        id="algoSelect"
+        style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 15px"
+      >
+        <option value="brute_force">Vét cạn (Chính xác 100%)</option>
+        <option value="greedy" selected>Tham ăn (Siêu nhanh)</option>
+      </select>
+
+      <!-- ===== PHẦN D: MÔ PHỎNG VẬT CẢN ===== -->
+      <hr />
+
+      <h3>🚧 Mô phỏng vật cản</h3>
+
+      <label><b>Điểm bắt đầu:</b></label>
+      <input
+        type="number"
+        id="obstacleFrom"
+        min="1"
+        placeholder="Ví dụ: 1"
+        style="
+          width: 100%;
+          padding: 8px;
+          margin-top: 5px;
+          box-sizing: border-box;
+        "
+      />
+
+      <label style="margin-top: 10px; display: block"
+        ><b>Điểm kết thúc:</b></label
+      >
+      <input
+        type="number"
+        id="obstacleTo"
+        min="1"
+        placeholder="Ví dụ: 3"
+        style="
+          width: 100%;
+          padding: 8px;
+          margin-top: 5px;
+          box-sizing: border-box;
+        "
+      />
+
+      <label style="margin-top: 10px; display: block"
+        ><b>Loại vật cản:</b></label
+      >
+      <select
+        id="obstacleType"
+        style="width: 100%; padding: 8px; margin-top: 5px"
+      >
+        <option value="blocked">🚫 Đường cấm</option>
+        <option value="traffic">🚧 Đường kẹt</option>
+      </select>
+
+      <button class="btn" id="addObstacleBtn">Thêm Vật Cản</button>
+      <button class="btn btn-danger" id="clearObstacleBtn">Xóa Vật Cản</button>
+
+      <p>Vật cản hiện tại: <b id="obstacleCount">0</b></p>
+
+      <button
+        class="btn"
+        id="runBtn"
+        style="background: #007bff; margin-top: 15px"
+      >
+        🚀 Chạy Tìm Lộ Trình
+      </button>
+      <button class="btn btn-danger" id="clearBtn">🗑️ Xóa Tất Cả Điểm</button>
+
+      <hr />
+      <h3>📊 Thống kê số liệu:</h3>
+      <p>Số điểm giao: <b id="pointCount">0</b></p>
+      <p>Thời gian chạy: <b id="runTime">0 ms</b></p>
+      <p>Tổng chi phí quãng đường: <b id="totalDist">0 km</b></p>
+    </div>
+
+    <!-- Màn hình bản đồ -->
+    <div id="map"></div>
+
+    <!-- Thư viện JS Bản đồ Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // 1. Khởi tạo bản đồ tại TP.HCM (Sử dụng OpenStreetMap Tile Layer)
+      const map = L.map("map").setView([10.7769, 106.7009], 13);
+      // CODE MỚI ĐÃ SỬA:
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        {
+          attribution: "© OpenStreetMap, © CARTO",
+          maxZoom: 19,
+          subdomains: "abcd",
+        }
+      ).addTo(map);
+
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 200);
+
+      let points = [];
+      let markers = [];
+      let routeLayer = null;
+
+      // ===== PHẦN MÔ PHỎNG VẬT CẢN =====
+      const blockedEdges = new Set();
+      const trafficEdges = new Map();
+      let obstacleLayers = [];
+
+      function edgeKey(a, b) {
+        return a < b ? `${a}-${b}` : `${b}-${a}`;
+      }
+
+      function blockEdge(a, b) {
+        blockedEdges.add(edgeKey(a, b));
+      }
+
+      function setTraffic(a, b, multiplier = 2) {
+        trafficEdges.set(edgeKey(a, b), multiplier);
+      }
+
+      // 2. Sự kiện click chọn điểm trên bản đồ
+      map.on("click", function (e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        points.push({ lat, lng });
+
+        const marker = L.marker([lat, lng])
+          .addTo(map)
+          .bindPopup(`<b>Điểm ${points.length}</b> (Kho/Điểm giao)`)
+          .openPopup();
+        markers.push(marker);
+
+        document.getElementById("pointCount").innerText = points.length;
+      });
+
+      // 3. Hàm tính khoảng cách công thức Haversine (km)
+      function getDistance(p1, p2) {
+        const R = 6371;
+        const dLat = ((p2.lat - p1.lat) * Math.PI) / 180;
+        const dLng = ((p2.lng - p1.lng) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((p1.lat * Math.PI) / 180) *
+            Math.cos((p2.lat * Math.PI) / 180) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      }
+
+      // Chi phí di chuyển có vật cản
+      function getTravelCost(points, a, b) {
+        const key = edgeKey(a, b);
+
+        // Đường cấm
+        if (blockedEdges.has(key)) {
+          return Infinity;
+        }
+
+        // Khoảng cách thực tế
+        let distance = getDistance(points[a], points[b]);
+
+        // Nếu kẹt xe thì tăng chi phí (x2)
+        const multiplier = trafficEdges.get(key) || 1;
+
+        return distance * multiplier;
+      }
+
+      // Nút Thêm vật cản
+      document
+        .getElementById("addObstacleBtn")
+        .addEventListener("click", () => {
+          const a = parseInt(document.getElementById("obstacleFrom").value) - 1;
+          const b = parseInt(document.getElementById("obstacleTo").value) - 1;
+          const type = document.getElementById("obstacleType").value;
+
+          if (
+            isNaN(a) ||
+            isNaN(b) ||
+            a < 0 ||
+            b < 0 ||
+            a >= points.length ||
+            b >= points.length
+          ) {
+            alert("Điểm nhập vào không hợp lệ!");
+            return;
+          }
+
+          if (a === b) {
+            alert("Hai điểm phải khác nhau!");
+            return;
+          }
+
+          const key = edgeKey(a, b);
+          let color;
+
+          if (type === "blocked") {
+            trafficEdges.delete(key);
+            blockEdge(a, b);
+            color = "red";
+          } else {
+            blockedEdges.delete(key);
+            setTraffic(a, b, 2);
+            color = "orange";
+          }
+
+          const obstacleLine = L.polyline(
+            [
+              [points[a].lat, points[a].lng],
+              [points[b].lat, points[b].lng],
+            ],
+            {
+              color: color,
+              weight: 6,
+              dashArray: "10, 10",
+            }
+          ).addTo(map);
+
+          obstacleLayers.push(obstacleLine);
+
+          document.getElementById("obstacleCount").innerText =
+            blockedEdges.size + trafficEdges.size;
+        });
+
+      // Nút Xóa chỉ vật cản
+      document
+        .getElementById("clearObstacleBtn")
+        .addEventListener("click", () => {
+          blockedEdges.clear();
+          trafficEdges.clear();
+
+          obstacleLayers.forEach((layer) => map.removeLayer(layer));
+          obstacleLayers = [];
+
+          document.getElementById("obstacleCount").innerText = "0";
+          document.getElementById("obstacleFrom").value = "";
+          document.getElementById("obstacleTo").value = "";
+        });
+
+      // 4. THUẬT TOÁN BRUTE FORCE
+      function solveBruteForce(points) {
+        const n = points.length;
+        if (n <= 1) return [0, 0];
+
+        const dist = Array.from({ length: n }, () => new Float64Array(n));
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            dist[i][j] = i === j ? 0 : getTravelCost(points, i, j);
+          }
+        }
+
+        let minDistance = Infinity;
+        let bestPath = [];
+
+        let fallbackPath = [];
+        let fallbackDist = Infinity;
+
+        const visited = new Uint8Array(n);
+        const currentPath = [0];
+        visited[0] = 1;
+
+        function backtrack(currentCity, count, currentCost) {
+          if (count === n) {
+            const returnCost = dist[currentCity][0];
+            const totalCost = currentCost + returnCost;
+
+            if (totalCost < fallbackDist) {
+              fallbackDist = totalCost;
+              fallbackPath = [...currentPath, 0];
+            }
+
+            if (returnCost !== Infinity && totalCost < minDistance) {
+              minDistance = totalCost;
+              bestPath = [...currentPath, 0];
+            }
+            return;
+          }
+
+          for (let nextCity = 1; nextCity < n; nextCity++) {
+            if (!visited[nextCity]) {
+              const stepCost = dist[currentCity][nextCity];
+
+              visited[nextCity] = 1;
+              currentPath.push(nextCity);
+
+              if (stepCost !== Infinity) {
+                backtrack(nextCity, count + 1, currentCost + stepCost);
+              } else {
+                backtrack(
+                  nextCity,
+                  count + 1,
+                  currentCost +
+                    getDistance(points[currentCity], points[nextCity])
+                );
+              }
+
+              currentPath.pop();
+              visited[nextCity] = 0;
+            }
+          }
+        }
+
+        backtrack(0, 1, 0);
+
+        if (bestPath.length === 0) {
+          alert(
+            "Cảnh báo: Tất cả lộ trình đều dính đường cấm! Thuật toán hiển thị lộ trình ngắn nhất về mặt khoảng cách hình học."
+          );
+          return fallbackPath;
+        }
+
+        return bestPath;
+      }
+
+      // THUẬT TOÁN GREEDY (An toàn chống kẹt)
+      function solveGreedyQ(points) {
+        if (!Array.isArray(points) || points.length === 0) return [];
+
+        const n = points.length;
+        const visited = new Array(n).fill(false);
+        const route = [];
+
+        let currentIndex = 0;
+        visited[currentIndex] = true;
+        route.push(currentIndex);
+
+        while (route.length < n) {
+          let nearestIndex = -1;
+          let minCost = Infinity;
+
+          for (let i = 0; i < n; i++) {
+            if (visited[i]) continue;
+
+            let cost = getTravelCost(points, currentIndex, i);
+            if (cost < minCost) {
+              minCost = cost;
+              nearestIndex = i;
+            }
+          }
+
+          // Nếu tất cả các điểm còn lại đều bị cấm, chọn điểm chưa thăm đầu tiên tìm thấy
+          if (nearestIndex === -1) {
+            for (let i = 0; i < n; i++) {
+              if (!visited[i]) {
+                nearestIndex = i;
+                break;
+              }
+            }
+          }
+
+          visited[nearestIndex] = true;
+          route.push(nearestIndex);
+          currentIndex = nearestIndex;
+        }
+
+        route.push(0);
+        return route;
+      }
+
+      // 5. HÀM VẼ ĐƯỜNG VÀ TÍNH TỔNG CHI PHÍ
+      function drawRoute(pathOrder) {
+        if (routeLayer) map.removeLayer(routeLayer);
+        if (!pathOrder || pathOrder.length === 0) return;
+
+        let routeCoords = [];
+        let totalCost = 0;
+        let hasBlockedSegment = false;
+
+        for (let i = 0; i < pathOrder.length; i++) {
+          let p = points[pathOrder[i]];
+          routeCoords.push([p.lat, p.lng]);
+
+          if (i > 0) {
+            let prevIdx = pathOrder[i - 1];
+            let currIdx = pathOrder[i];
+            let cost = getTravelCost(points, prevIdx, currIdx);
+
+            if (cost === Infinity) {
+              hasBlockedSegment = true;
+              totalCost += getDistance(points[prevIdx], points[currIdx]);
+            } else {
+              totalCost += cost;
+            }
+          }
+        }
+
+        routeLayer = L.polyline(routeCoords, {
+          color: "#007bff",
+          weight: 4,
+        }).addTo(map);
+
+        const totalDistElem = document.getElementById("totalDist");
+        if (hasBlockedSegment) {
+          totalDistElem.innerText =
+            totalCost.toFixed(2) + " km (Đi qua đường cấm)";
+        } else {
+          totalDistElem.innerText = totalCost.toFixed(2) + " km";
+        }
+
+        // Cập nhật thứ tự di chuyển lên Marker Popup
+        pathOrder.forEach((pointIndex, step) => {
+          if (step < pathOrder.length - 1) {
+            const isStart = step === 0 ? "<b>(Kho xuất phát)</b>" : "";
+            markers[pointIndex].bindPopup(
+              `<b>Điểm ${pointIndex + 1}</b> ${isStart}<br>Thứ tự đi: <b>Bước ${
+                step + 1
+              }</b>`
+            );
+          }
+        });
+      }
+
+      // 6. Xử lý nút Chạy Tìm Lộ Trình
+      document.getElementById("runBtn").addEventListener("click", () => {
+        if (points.length < 2) {
+          alert("Vui lòng chọn ít nhất 2 điểm trên bản đồ!");
+          return;
+        }
+
+        const algo = document.getElementById("algoSelect").value;
+
+        if (algo === "brute_force" && points.length > 10) {
+          document.getElementById("runTime").innerText =
+            "Không khả thi (N > 10)";
+          alert(
+            "Brute Force không khả thi với N > 10 vì số nhánh quay lui quá lớn!"
+          );
+          return;
+        }
+
+        let pathOrder = [];
+        let totalTime = 0;
+
+        let runs = algo === "greedy" ? 50 : points.length <= 8 ? 5 : 1;
+
+        for (let i = 0; i < runs; i++) {
+          const startTime = performance.now();
+
+          if (algo === "brute_force") {
+            pathOrder = solveBruteForce(points);
+          } else if (algo === "greedy") {
+            pathOrder = solveGreedyQ(points);
+          }
+
+          const endTime = performance.now();
+          totalTime += endTime - startTime;
+        }
+
+        const averageTime = totalTime / runs;
+
+        document.getElementById("runTime").innerText =
+          averageTime.toFixed(4) + " ms (TB " + runs + " lần)";
+
+        drawRoute(pathOrder);
+      });
+
+      // 7. Xử lý nút Xóa Tất Cả Điểm
+      document.getElementById("clearBtn").addEventListener("click", () => {
+        markers.forEach((m) => map.removeLayer(m));
+        if (routeLayer) map.removeLayer(routeLayer);
+        points = [];
+        markers = [];
+        routeLayer = null;
+
+        blockedEdges.clear();
+        trafficEdges.clear();
+
+        obstacleLayers.forEach((layer) => map.removeLayer(layer));
+        obstacleLayers = [];
+
+        document.getElementById("obstacleCount").innerText = "0";
+        document.getElementById("obstacleFrom").value = "";
+        document.getElementById("obstacleTo").value = "";
+
+        document.getElementById("pointCount").innerText = "0";
+        document.getElementById("runTime").innerText = "0 ms";
+        document.getElementById("totalDist").innerText = "0 km";
+      });
+    </script>
+  </body>
+</html>
