@@ -121,14 +121,11 @@
         // 1. Khởi tạo bản đồ tại TP.HCM (Sử dụng OpenStreetMap Tile Layer)
         const map = L.map("map").setView([10.7769, 106.7009], 13);
         // CODE MỚI ĐÃ SỬA:
-        L.tileLayer(
-            "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-            {
-                attribution: "© OpenStreetMap, © CARTO",
-                maxZoom: 19,
-                subdomains: "abcd",
-            }
-        ).addTo(map);
+        // Thay thế đoạn L.tileLayer cũ bằng đoạn này:
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
+    maxZoom: 19
+}).addTo(map);
 
         setTimeout(() => {
             map.invalidateSize();
